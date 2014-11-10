@@ -22,9 +22,10 @@ class PYD(EXE):
         import Cython.Compiler.Version
         from Cython.Build import cythonize
 
-        if os.getcwd() not in sys.path:
-            sys.path.append(os.getcwd())
+        old_path = sys.path
+        sys.path.insert(0, os.path.join(os.getcwd(), 'bootloader'))
         import templates
+        sys.path = old_path
 
         logger.info("building with Cython " + Cython.Compiler.Version.version)
 
