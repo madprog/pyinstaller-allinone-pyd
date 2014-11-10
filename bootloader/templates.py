@@ -5,12 +5,6 @@ def write(filename, template, **tpl_vars):
     with open(filename, "w") as outf:
         outf.write(template % tpl_vars)
 
-MAIN_PYX = """
-import sys
-
-print dir(sys)
-"""
-
 MAIN_C = """/**/
 #include <Python.h>
 
@@ -52,10 +46,6 @@ MAIN_C = """/**/
     (ptoc) = (tocstart); \
     (ptoc) < (tocend); \
     (ptoc) = (TOC*)((char *)(ptoc) + ntohl((ptoc)->structlen)))
-
-//static PyMethodDef methods[] = {
-//    {0, 0, 0, 0}
-//};
 
 extern const int PAYLOAD_LEN;
 extern const char PAYLOAD[%(len_payload)d];
@@ -217,23 +207,26 @@ void import_exec_module(ArchiveInfo *archive_info, TOC *ptoc) {
     /* Compile it */
     code = Py_CompileString(data, buf, Py_file_input);
 
+    free(data);
+
     // This should replace the call to Py_InitModule("%(module_name)s", methods);
     module = PyImport_ExecCodeModule("%(module_name)s", code);
 
     Py_CLEAR(code);
 }
 
+static ArchiveInfo archive_info = { NULL, NULL, NULL, NULL, NULL, "", "" };
+
 PyMODINIT_FUNC init%(module_name)s()
 {
-    ArchiveInfo archive_info;
     TOC *ptoc;
 	PyObject *marshal;
 	PyObject *marshaldict;
 
-    // TODO use a more generic (less windows) tmp path
-    // TODO find some way to delete this folder at exit time
-    pyi_get_temp_path(archive_info.tmp_path);
-    mkdir(archive_info.tmp_path);
+    if (strlen(archive_info.tmp_path) == 0) {
+        Py_FatalError("Temporary folder was not created");
+    }
+
     pyi_setenv("_MEIPASS2", archive_info.tmp_path); //Bootstrap sets sys._MEIPASS, plugins rely on it
 
     snprintf(archive_info.pkg_path, sizeof(archive_info.pkg_path), "%%s%%s%(module_name)s.pkg", archive_info.tmp_path, archive_info.tmp_path[strlen(archive_info.tmp_path) - 1] == PYI_SEP ? "" : PYI_SEPSTR);
@@ -302,8 +295,43 @@ PyMODINIT_FUNC init%(module_name)s()
             break;
         }
     }
+}
 
-    //Py_InitModule("%(module_name)s", methods);
+BOOL WINAPI DllMain(_In_ HINSTANCE hinstDLL, _In_ DWORD fdwReason, _In_ LPVOID lpvReserved) {
+	char remover_path[MAX_PATH];
+	FILE *remover = fopen(remover_path, "w");
+	PROCESS_INFORMATION process_info;
+	STARTUPINFO startupinfo;
+
+    switch (fdwReason) {
+        case DLL_PROCESS_ATTACH:
+            if (!pyi_get_temp_path(archive_info.tmp_path)) {
+                fprintf(stderr, "Temporary folder not created!\\n");
+                return FALSE;
+            }
+            break;
+
+        case DLL_PROCESS_DETACH:
+            //_pyi_remove_temp_path(archive_info.tmp_path);
+			snprintf(remover_path, sizeof(remover_path), "%%s_%%s", archive_info.tmp_path, "remover.bat");
+			remover = fopen(remover_path, "w");
+			fprintf(remover, "@echo on\\n:loop\\nrmdir /q /s \\"%%s\\"\\nif exist \\"%%s\\" goto loop\\n( del /q /f \\"%%%%~f0\\" >nul 2>&1 & exit /b 0  )", archive_info.tmp_path, archive_info.tmp_path);
+			fclose(remover);
+
+			memset(&startupinfo, 0, sizeof(startupinfo));
+			startupinfo.cb = sizeof(startupinfo);
+			if (CreateProcess(NULL, remover_path, NULL, NULL, FALSE,
+					NORMAL_PRIORITY_CLASS | CREATE_NO_WINDOW,
+					NULL, NULL, &startupinfo, &process_info)) {
+				CloseHandle(process_info.hProcess);
+				CloseHandle(process_info.hThread);
+			} else {
+				fprintf(stderr, "Error %%d when running remover.bat\\n", GetLastError());
+			}
+            break;
+    }
+
+    return TRUE;
 }
 """
 
