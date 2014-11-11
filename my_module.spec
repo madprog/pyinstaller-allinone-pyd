@@ -57,10 +57,10 @@ class PYD(EXE):
 
         libraries = []
         macros = []
-
+        include_dirs = ['bootloader/zlib', 'bootloader/common']
         bootloader_files = []
-        bootloader_files += glob.glob("bootloader/zlib/*.c")
-        bootloader_files += glob.glob("bootloader/common/*.c")
+        bootloader_files += glob.glob('bootloader/zlib/*.c')
+        bootloader_files += glob.glob('bootloader/common/*.c')
 
         if self.debug:
             macros.append(('DEBUG', None))
@@ -70,10 +70,16 @@ class PYD(EXE):
             macros.append(('WIN32', None))
             macros.append(('_CRT_SECURE_NO_WARNINGS', None))
             bootloader_files.append('bootloader/windows/utils.c')
+        elif is_darwin:
+            pass
+        else:
+            bootloader_files.append('bootloader/linux/getpath.c')
+            include_dirs.append('bootloader/linux')
 
+        print 'Building:\n    %s' % ('\n    '.join(bootloader_files), )
         extensions = cythonize([
             Extension(module_name,
-                      include_dirs=["bootloader/zlib", "bootloader/common"],
+                      include_dirs=include_dirs,
                       sources=[path for path, tpl in files] + bootloader_files,
                       libraries=libraries,
                       define_macros=macros),
@@ -86,7 +92,10 @@ class PYD(EXE):
         cmd.ensure_finalized()
         cmd.run()
 
-        return os.path.join(module_path, module_name + ".pyd")
+        if is_win:
+            return os.path.join(module_path, module_name + '.pyd')
+        else:
+            return os.path.join(module_path, module_name + '.so')
 
     def assemble(self):
         logger.info("building PYD from %s", os.path.basename(self.out))
@@ -173,10 +182,10 @@ pyd = PYD(pyz,
           a.binaries,
           a.zipfiles,
           a.datas,
-          name='my_module.pyd',
+          name='my_module' + (is_win and '.pyd' or '.so'),
           entrymodule='module',
           debug=False,
           strip=None,
-          upx=True,
+          upx=False,
           console=True,
           )

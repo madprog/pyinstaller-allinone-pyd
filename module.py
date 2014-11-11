@@ -1,4 +1,4 @@
-import sfml
+import pybonjour
 
 def test():
     for i in range(sf.VideoMode.GetModesCount()):

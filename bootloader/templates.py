@@ -57,7 +57,7 @@ typedef struct {
 	PyObject *marshal_loads;
 	PyObject *__main__;
     char tmp_path[PATH_MAX];
-    char pkg_path[MAX_PATH];
+    char pkg_path[PATH_MAX];
 } ArchiveInfo;
 
 /*
@@ -150,7 +150,7 @@ void import_module(ArchiveInfo *archive_info, TOC *ptoc) {
 
 void add_tmppath_to_syspath(ArchiveInfo *archive_info) {
     int rc;
-    char cmd[MAX_PATH + 40];
+    char cmd[PATH_MAX + 40];
     snprintf(cmd, sizeof(cmd), "import sys\\nsys.path.append(r'%%s')\\n", archive_info->tmp_path);
     rc = PyRun_SimpleString(cmd);
     if (rc != 0)
@@ -162,7 +162,7 @@ void add_tmppath_to_syspath(ArchiveInfo *archive_info) {
 void install_zlib(ArchiveInfo *archive_info, TOC *ptoc) {
     int rc;
     int zlibpos = ntohl(ptoc->pos);
-    char cmd[MAX_PATH + 40];
+    char cmd[PATH_MAX + 40];
     snprintf(cmd, sizeof(cmd), "sys.path.append(r'%%s?%%d')\\n", archive_info->pkg_path, zlibpos);
     rc = PyRun_SimpleString(cmd);
     if (rc != 0)
@@ -297,42 +297,57 @@ PyMODINIT_FUNC init%(module_name)s()
     }
 }
 
+#ifdef WIN32
+void onPydLoad();
+void onPydUnload();
+
 BOOL WINAPI DllMain(_In_ HINSTANCE hinstDLL, _In_ DWORD fdwReason, _In_ LPVOID lpvReserved) {
-	char remover_path[MAX_PATH];
-	FILE *remover = fopen(remover_path, "w");
-	PROCESS_INFORMATION process_info;
-	STARTUPINFO startupinfo;
-
     switch (fdwReason) {
-        case DLL_PROCESS_ATTACH:
-            if (!pyi_get_temp_path(archive_info.tmp_path)) {
-                fprintf(stderr, "Temporary folder not created!\\n");
-                return FALSE;
-            }
-            break;
-
-        case DLL_PROCESS_DETACH:
-            //_pyi_remove_temp_path(archive_info.tmp_path);
-			snprintf(remover_path, sizeof(remover_path), "%%s_%%s", archive_info.tmp_path, "remover.bat");
-			remover = fopen(remover_path, "w");
-			fprintf(remover, "@echo on\\n:loop\\nrmdir /q /s \\"%%s\\"\\nif exist \\"%%s\\" goto loop\\n( del /q /f \\"%%%%~f0\\" >nul 2>&1 & exit /b 0  )", archive_info.tmp_path, archive_info.tmp_path);
-			fclose(remover);
-
-			memset(&startupinfo, 0, sizeof(startupinfo));
-			startupinfo.cb = sizeof(startupinfo);
-			if (CreateProcess(NULL, remover_path, NULL, NULL, FALSE,
-					NORMAL_PRIORITY_CLASS | CREATE_NO_WINDOW,
-					NULL, NULL, &startupinfo, &process_info)) {
-				CloseHandle(process_info.hProcess);
-				CloseHandle(process_info.hThread);
-			} else {
-				fprintf(stderr, "Error %%d when running remover.bat\\n", GetLastError());
-			}
-            break;
+        case DLL_PROCESS_ATTACH: onPydLoad(); break;
+        case DLL_PROCESS_DETACH: onPydUnload(); break;
     }
-
     return TRUE;
 }
+#endif
+
+#ifdef WIN32
+void onPydLoad() {
+#else
+void __attribute__ ((constructor)) onPydLoad() {
+#endif
+    if (!pyi_get_temp_path(archive_info.tmp_path)) {
+        Py_FatalError("Temporary folder not created!");
+    }
+}
+
+#ifdef WIN32
+void onPydUnload() {
+    char remover_path[PATH_MAX];
+    FILE *remover = fopen(remover_path, "w");
+    PROCESS_INFORMATION process_info;
+    STARTUPINFO startupinfo;
+
+    snprintf(remover_path, sizeof(remover_path), "%%s_%%s", archive_info.tmp_path, "remover.bat");
+    remover = fopen(remover_path, "w");
+    fprintf(remover, "@echo on\\n:loop\\nrmdir /q /s \\"%%s\\"\\nif exist \\"%%s\\" goto loop\\n( del /q /f \\"%%%%~f0\\" >nul 2>&1 & exit /b 0  )", archive_info.tmp_path, archive_info.tmp_path);
+    fclose(remover);
+
+    memset(&startupinfo, 0, sizeof(startupinfo));
+    startupinfo.cb = sizeof(startupinfo);
+    if (CreateProcess(NULL, remover_path, NULL, NULL, FALSE,
+            NORMAL_PRIORITY_CLASS | CREATE_NO_WINDOW,
+            NULL, NULL, &startupinfo, &process_info)) {
+        CloseHandle(process_info.hProcess);
+        CloseHandle(process_info.hThread);
+    } else {
+        fprintf(stderr, "Error %%d when running remover.bat\\n", GetLastError());
+    }
+}
+#else
+void __attribute__ ((destructor)) onPydUnload() {
+    pyi_remove_temp_path(archive_info.tmp_path);
+}
+#endif
 """
 
 PAYLOAD_C = """const char PAYLOAD[%(len_payload)d] = {

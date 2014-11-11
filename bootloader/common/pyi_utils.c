@@ -211,7 +211,7 @@ int pyi_test_temp_path(char *buff)
 }
 
 // TODO merge this function with windows version.
-static int pyi_get_temp_path(char *buff)
+int pyi_get_temp_path(char *buff)
 {
     /* On OSX the variable TMPDIR is usually defined. */
 	static const char *envname[] = {
