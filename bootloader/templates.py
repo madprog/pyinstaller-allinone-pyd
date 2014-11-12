@@ -222,6 +222,8 @@ PyMODINIT_FUNC init%(module_name)s()
     TOC *ptoc;
 	PyObject *marshal;
 	PyObject *marshaldict;
+    PyObject *prefix = PySys_GetObject("prefix");
+    PyObject *tmp_prefix = PyString_FromStringAndSize(archive_info.tmp_path, strlen(archive_info.tmp_path));
 
     if (strlen(archive_info.tmp_path) == 0) {
         Py_FatalError("Temporary folder was not created");
@@ -282,12 +284,20 @@ PyMODINIT_FUNC init%(module_name)s()
 
 	archive_info.__main__ = PyImport_AddModule("__main__");
 
+    prefix = PySys_GetObject("prefix"); Py_INCREF(prefix);
+    tmp_prefix = PyString_FromString(archive_info.tmp_path);
     FOREACH_TOC (ptoc, archive_info.toc, archive_info.tocend) {
         switch (ptoc->typcd) {
         case ARCHIVE_ITEM_PYSOURCE:
             if (strncmp(ptoc->name, "%(entrymodule)s", sizeof("%(entrymodule)s"))) {
+                // Temporarily change the prefix so that pyi_* files behave correctly
+                PySys_SetObject("prefix", tmp_prefix);
+
                 // Not our entry module: probably a bootstrap file
                 run_script(&archive_info, ptoc);
+
+                // Restore previous prefix so that the rest of the application behaves correctly
+                PySys_SetObject("prefix", prefix);
             } else {
                 // This is our entry module
                 import_exec_module(&archive_info, ptoc);
@@ -295,6 +305,8 @@ PyMODINIT_FUNC init%(module_name)s()
             break;
         }
     }
+    Py_DECREF(tmp_prefix);
+    Py_DECREF(prefix);
 }
 
 #ifdef WIN32

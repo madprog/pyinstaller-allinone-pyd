@@ -176,6 +176,11 @@ class PYD(EXE):
 
 
 a = Analysis(['module.py'])
+a = Analysis(['module.py'],
+             hiddenimports=[
+                 'numbers', # Hidden import of PySFML
+                 ]
+             )
 pyz = PYZ(a.pure)
 pyd = PYD(pyz,
           a.scripts,
